@@ -1,26 +1,29 @@
 """
-Discover Crypto - new-upload notifier with A/B comment rotation (GitHub Actions).
+Discover Crypto - new-upload notifier with AI-written pinned comments.
 
 Every run (~10 min):
   1. Reads the channel's public upload feed (videos + shorts + live replays).
-     No login/OAuth needed - the feed is public.
-  2. For any upload it hasn't seen before, it:
-       - detects whether it's a Short or a long-form video/live,
-       - picks the next A/B comment variant (alternates A, B, A, B, ...),
-       - sends you a Telegram message with the title, the variant, the comment
-         to paste, and a direct link to the comments page,
-       - logs the choice to ab_log.csv so you can compare which variant drives
-         more Skool signups.
+     No login needed - the feed is public.
+  2. For any upload not seen before, it:
+       - detects Short vs long-form video/live,
+       - writes a comment tailored to the video title, in the partner's voice
+         (via the Claude API), ending in the Skool link for long-form or the
+         "tap our channel" CTA for Shorts,
+       - falls back to a static comment if the AI call fails or no key is set,
+       - sends you a Telegram alert with the comment to paste and a direct link
+         to the comments page,
+       - logs the comment to comment_log.csv so you can review what went out.
   3. Records the video id in seen.json so it never alerts twice.
 
 Config (env vars set by the workflow / GitHub secrets):
-  CHANNEL_ID                                            (workflow file)
-  COMMENT_TEXT_A, COMMENT_TEXT_B                        (long-form / live)
-  COMMENT_TEXT_SHORTS_A, COMMENT_TEXT_SHORTS_B          (Shorts)
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID                  (GitHub secrets)
-  SEED_ON_FIRST_RUN  (optional, default "true")
-  STATE_FILE         (optional, default "seen.json")
-  TEST_ALERT         (optional; "true" sends one test message and exits)
+  CHANNEL_ID                                (workflow file)
+  SKOOL_LINK           (optional, defaults to the discovercrypto about page)
+  COMMENT_FALLBACK, COMMENT_FALLBACK_SHORTS (workflow file; used if AI fails)
+  ANTHROPIC_API_KEY    (GitHub secret; if unset, always uses the fallback)
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID      (GitHub secrets)
+  SEED_ON_FIRST_RUN    (optional, default "true")
+  STATE_FILE           (optional, default "seen.json")
+  TEST_ALERT           (optional; "true" sends one test message and exits)
 """
 
 import csv
@@ -32,17 +35,17 @@ import xml.etree.ElementTree as ET
 import requests
 
 CHANNEL_ID = os.environ["CHANNEL_ID"]
-COMMENT_A = os.environ["COMMENT_TEXT_A"]
-COMMENT_B = os.environ["COMMENT_TEXT_B"]
-COMMENT_SHORTS_A = os.environ["COMMENT_TEXT_SHORTS_A"]
-COMMENT_SHORTS_B = os.environ["COMMENT_TEXT_SHORTS_B"]
+SKOOL_LINK = os.environ.get("SKOOL_LINK", "https://www.skool.com/discovercrypto/about")
+FALLBACK = os.environ["COMMENT_FALLBACK"]
+FALLBACK_SHORTS = os.environ["COMMENT_FALLBACK_SHORTS"]
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")  # optional
 
 SEED_ON_FIRST_RUN = os.environ.get("SEED_ON_FIRST_RUN", "true").lower() == "true"
 STATE_FILE = os.environ.get("STATE_FILE", "seen.json")
 TEST_ALERT = os.environ.get("TEST_ALERT", "").lower() == "true"
-AB_LOG = "ab_log.csv"
+LOG_FILE = "comment_log.csv"
 
 FEED_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 NS = {
@@ -50,6 +53,7 @@ NS = {
     "yt": "http://www.youtube.com/xml/schemas/2015",
 }
 MAX_STATE = 500
+SHORTS_CTA = "Tap our channel and hit the top link."
 
 
 def load_seen():
@@ -79,8 +83,6 @@ def recent_uploads():
 
 
 def is_short(vid):
-    # A Short stays on /shorts/<id> (HTTP 200); a normal video or live redirects
-    # (303) to /watch. Falls back to treating it as a normal video on any error.
     try:
         r = requests.head(
             f"https://www.youtube.com/shorts/{vid}",
@@ -93,28 +95,65 @@ def is_short(vid):
         return False
 
 
-def ab_count():
-    # Number of alerts already logged, used to alternate A / B.
-    if not os.path.exists(AB_LOG):
-        return 0
-    with open(AB_LOG, encoding="utf-8") as f:
-        return max(0, sum(1 for _ in f) - 1)  # minus the header row
+SYSTEM_PROMPT = (
+    "You write ONE pinned comment for a new Discover Crypto YouTube upload, "
+    "tailored to the video's topic. Voice: short, one line, value and education "
+    "first, calm and confident. Never hype, never salesy.\n\n"
+    "Match the style of these real examples exactly:\n"
+    "- Learn how to short so you can make money regardless of the market direction\n"
+    "- Learn to build wealth with crypto\n"
+    "- Follow our wealth building strategies\n"
+    "- We teach these strategies here\n\n"
+    "Rules:\n"
+    "- One short sentence, clearly tied to the video title's topic.\n"
+    "- Frame it as what the viewer will learn or what the community teaches.\n"
+    "- No hashtags, no emojis, no quotation marks.\n"
+    "- Never use the word 'free'.\n"
+    "- Never use em dashes; use plain hyphens or rephrase.\n"
+    "- Do NOT include any link or URL.\n"
+    "- Output only the sentence, with no preamble or explanation."
+)
 
 
-def log_ab(vid, kind, variant, title):
-    new_file = not os.path.exists(AB_LOG)
-    with open(AB_LOG, "a", newline="", encoding="utf-8") as f:
+def generate_comment(title, short):
+    import anthropic  # imported lazily so a missing dep never blocks fallbacks
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    resp = client.messages.create(
+        model="claude-opus-5",
+        max_tokens=1024,
+        output_config={"effort": "low"},
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": f"Video title: {title}"}],
+    )
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    text = text.strip('"').strip("'").strip()
+    if not text:
+        raise ValueError("empty generation")
+    if short:
+        if not text.endswith((".", "!", "?")):
+            text += "."
+        return f"{text} {SHORTS_CTA}"
+    return f"{text.rstrip('.')} - {SKOOL_LINK}"
+
+
+def build_comment(title, short):
+    if ANTHROPIC_API_KEY:
+        try:
+            return generate_comment(title, short), "AI"
+        except Exception as e:  # noqa: BLE001 - fall back, never block the alert
+            print(f"AI generation failed for '{title}': {e}")
+    return (FALLBACK_SHORTS if short else FALLBACK), "fallback"
+
+
+def log_comment(vid, kind, source, comment):
+    new_file = not os.path.exists(LOG_FILE)
+    with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         if new_file:
-            w.writerow(["timestamp_utc", "video_id", "kind", "variant", "title"])
+            w.writerow(["timestamp_utc", "video_id", "kind", "source", "comment"])
         stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        w.writerow([stamp, vid, kind, variant, title])
-
-
-def pick_comment(short, variant):
-    if short:
-        return COMMENT_SHORTS_A if variant == "A" else COMMENT_SHORTS_B
-    return COMMENT_A if variant == "A" else COMMENT_B
+        w.writerow([stamp, vid, kind, source, comment])
 
 
 def send_telegram(text):
@@ -126,10 +165,10 @@ def send_telegram(text):
     r.raise_for_status()
 
 
-def send_alert(vid, title, kind, variant, comment):
-    # Message 1: what it is + the one-tap link straight to its comments page.
+def send_alert(vid, title, kind, source, comment):
+    # Message 1: what it is + one-tap link to its comments page.
     send_telegram(
-        f"New Discover Crypto {kind}  (test variant {variant})\n\n"
+        f"New Discover Crypto {kind}  ({source} comment)\n\n"
         f"{title}\n"
         f"https://youtu.be/{vid}\n\n"
         "Tap to open its comments page (post + pin here):\n"
@@ -142,11 +181,18 @@ def send_alert(vid, title, kind, variant, comment):
 
 def main():
     if TEST_ALERT:
-        send_telegram(
-            "Test alert from your Discover Crypto upload notifier. "
-            "If you can read this, notifications are working."
-        )
-        print("Sent test alert.")
+        sample_title = "LEGENDARY Bitcoin Bottom Signal RETURNS!"
+        try:
+            comment, source = build_comment(sample_title, False)
+            status = "working" if source == "AI" else "using FALLBACK (check ANTHROPIC_API_KEY)"
+            send_telegram(
+                f"Test alert. AI comment generation is {status}.\n\n"
+                f"Sample comment for a video titled '{sample_title}':\n\n{comment}"
+            )
+            print(f"Test alert sent. Source: {source}")
+        except Exception as e:  # noqa: BLE001
+            send_telegram(f"Test alert. Something errored: {e}")
+            print(f"Test error: {e}")
         return
 
     seen = load_seen()
@@ -159,22 +205,19 @@ def main():
         print(f"Seeded {len(ids)} existing uploads; no alerts sent.")
         return
 
-    count = ab_count()
     alerted = []
-    # Oldest first so A/B alternation follows publish order.
+    # Oldest first so alerts arrive in publish order.
     for vid, title in reversed(uploads):
         if vid in seen:
             continue
         try:
             short = is_short(vid)
             kind = "Short" if short else "video"
-            variant = "A" if count % 2 == 0 else "B"
-            comment = pick_comment(short, variant)
-            send_alert(vid, title, kind, variant, comment)
-            log_ab(vid, kind, variant, title)
-            count += 1
+            comment, source = build_comment(title, short)
+            send_alert(vid, title, kind, source, comment)
+            log_comment(vid, kind, source, comment)
             seen.add(vid)
-            alerted.append((vid, kind, variant))
+            alerted.append((vid, source))
         except Exception as e:  # noqa: BLE001 - log and keep going
             print(f"Alert failed for {vid}: {e}")
 

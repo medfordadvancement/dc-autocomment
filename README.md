@@ -42,7 +42,10 @@ and add:
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | the token from BotFather (Step 1) |
 | `TELEGRAM_CHAT_ID` | your Id from @userinfobot (Step 3) |
+| `ANTHROPIC_API_KEY` | an Anthropic API key (writes the per-video comment; optional) |
 
+`ANTHROPIC_API_KEY` is optional: with it, each comment is written to match the
+video. Without it, the notifier uses the fallback comments in the workflow file.
 (The old `OAUTH_*` secrets are no longer used - you can delete them.)
 
 ### Step 5 - Test it
@@ -57,32 +60,36 @@ videos. After that, every new upload triggers an alert.
 ---
 
 ## What each alert looks like
+Two Telegram messages. First the context + a one-tap link to the comments page:
 ```
-New Discover Crypto Short  (test variant B)
+New Discover Crypto video  (AI comment)
 
 <video title>
 https://youtu.be/<id>
 
-Comment to post + pin:
-Stop watching everyone else win while you're stuck guessing. Tap our channel ...
-
-Open comments to post & pin:
+Tap to open its comments page (post + pin here):
 https://studio.youtube.com/video/<id>/comments
+
+The exact comment to pin is in the next message - tap it to copy.
 ```
-The alert names the type (Short or video) and which A/B variant to pin.
+Then the bare comment as its own message, so one tap copies exactly it.
 
-## Comment styles: Short vs long-form, and A/B rotation
-The notifier detects whether an upload is a **Short** or a **long-form video/live**,
-then alternates between two copy variants (A, B, A, B...) so you can A/B test which
-converts better:
-- **Long-form / live** uses `COMMENT_TEXT_A` / `COMMENT_TEXT_B` (clickable Skool link)
-- **Shorts** use `COMMENT_TEXT_SHORTS_A` / `COMMENT_TEXT_SHORTS_B` (drive to the
-  channel's top link)
+## How the comment is written
+For each new upload the notifier writes a comment **tailored to the video title,
+in the partner's voice** (short, value-first, e.g. "Learn to build wealth with
+crypto"), using the Claude API:
+- **Long-form / live** ends with the clickable Skool link.
+- **Shorts** end with "Tap our channel and hit the top link" (Shorts links are
+  not clickable, so viewers are sent to the channel's top link).
 
-Each Telegram alert tells you which **variant** to pin, and every choice is logged to
-`ab_log.csv` in the repo (timestamp, video id, kind, variant, title). Compare that log
-against your Skool signups to see which style wins. Edit any of the four variants in
-`.github/workflows/autocomment.yml`, commit, push.
+The alert header shows `AI comment` when it was written by the model, or
+`fallback comment` when the AI call was skipped or failed (in which case it uses
+`COMMENT_FALLBACK` / `COMMENT_FALLBACK_SHORTS` from the workflow file). Every
+comment that goes out is logged to `comment_log.csv` in the repo (timestamp,
+video id, kind, source, comment) so you can review what was sent.
+
+To change the model's style, edit the guidance in `poller.py` (the
+`SYSTEM_PROMPT`). To change the fallback wording, edit the workflow file.
 
 ## Turning it off
 Repo → Actions → **DC upload notifier** → ••• → **Disable workflow**.
