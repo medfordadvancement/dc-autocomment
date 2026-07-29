@@ -1,119 +1,77 @@
-# Discover Crypto — Auto-Comment on New Uploads (GitHub Actions)
+# Discover Crypto — New-Upload Notifier (Telegram)
 
-Automatically posts your community comment on every new video / short / live
-replay, within ~10 minutes of it going public. You still **pin** each one
-manually (YouTube has no pin API — nothing can automate that step).
+Alerts you on Telegram the moment a new video / short / live publishes, with the
+comment text ready to paste and a direct link to that video's comments page. You
+paste + pin (~20 seconds).
+
+> Why not auto-post? Posting/pinning as Discover Crypto requires **owner-level**
+> API access to the channel, which isn't available (manager access can't
+> authorize it, and Google blocks unverified apps on the owner account). Detecting
+> uploads needs no login at all, so this half is rock-solid.
 
 - **Channel:** Discover Crypto (`UCjemQfjaXAzA-95RKoy9n_g`)
-- **Comment posted:**
+- **Comment sent in each alert:**
   > Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system.
-- **Cost:** free (GitHub Actions, no credit card)
-- **How it runs:** a GitHub Actions cron job (every ~10 min) runs `poller.py`, which checks the channel's `feeds/videos.xml` and posts the
-  comment on new public uploads.
-  `seen.json` (committed back after each run) remembers what's already done.
+- **Cost:** free (GitHub Actions + Telegram)
+- **How it runs:** a GitHub Actions cron job (every ~10 min) runs `poller.py`,
+  which checks the public feed and messages you on Telegram for new uploads.
+  `seen.json` remembers what's already been alerted.
 
 ---
 
-## Status so far
+## Setup — Telegram (the only thing left to do)
 
-- ✅ Google Cloud project `dc-autocomment` created
-- ✅ YouTube Data API enabled on it
-- ✅ Code written and committed locally in this folder
-- ⬜ **Steps below need you** (they require your Google + GitHub sign-in)
+### Step 1 — Create a bot
+1. In Telegram, open a chat with **@BotFather**
+2. Send `/newbot`, follow the prompts (give it any name + username)
+3. BotFather replies with a **bot token** (looks like `12345678:AAE...`). Keep it.
 
-Steps marked **[you]** need your sign-in/consent and can't be done for you.
+### Step 2 — Start a chat with your new bot
+Search your bot's username in Telegram, open it, and press **Start** (send
+`/start`). A bot can't message you until you've started it.
 
----
+### Step 3 — Get your chat ID
+Open a chat with **@userinfobot** and press Start. It replies with your numeric
+**Id** — that's your `TELEGRAM_CHAT_ID`.
 
-## Step 1 — Create the OAuth client  **[you]**
-
-This is the identity that posts the comment.
-
-1. https://console.cloud.google.com/ → make sure the project is **dc-autocomment**.
-2. **APIs & Services → OAuth consent screen**
-   - User type: **External** → Create. Fill app name (e.g. "DC AutoComment")
-     and your email; save through the pages.
-   - Add scope `https://www.googleapis.com/auth/youtube.force-ssl`.
-   - Add your Google account under **Test users**.
-3. ⚠️ **CRITICAL — publish to production.** On the OAuth consent screen set
-   **Publishing status → In production** ("Publish app" → confirm). If you leave
-   it in *Testing*, your refresh token **expires after 7 days** and the whole
-   thing silently dies every week. In production it never expires. You'll see an
-   "unverified app" warning later — that's expected, click through it.
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-   - Application type: **Desktop app** → Create.
-   - **Download JSON**, rename to `client_secret.json`, put it in this folder.
-     (It's gitignored — it will not be uploaded to GitHub.)
-
-## Step 2 — Mint your refresh token  **[you]**
-
-In this folder, on your computer:
-
-```bash
-pip install -r requirements.txt
-python get_refresh_token.py
-```
-
-A browser opens. Sign in, **pick the Discover Crypto channel if asked**, click
-through the unverified-app warning, approve. It prints a **refresh token** —
-keep it for Step 4. (This is the step that ties the automation to your channel.)
-
-## Step 3 — Put the code on GitHub  **[you sign-in, I can run the push]**
-
-Create an **empty** repo (a **public** repo is recommended — it keeps Actions
-100% free with no minute limits, and contains no secrets; your tokens live in
-encrypted repo secrets, never in the code):
-
-- Easiest: install GitHub CLI (https://cli.github.com/), run `gh auth login`,
-  then tell the assistant — it will create the repo and push for you.
-- Or manually: create a new empty repo at https://github.com/new (no README),
-  then in this folder:
-  ```bash
-  git branch -M main
-  git remote add origin https://github.com/YOURNAME/dc-autocomment.git
-  git push -u origin main
-  ```
-
-## Step 4 — Add the three secrets  **[you]**
-
-In the GitHub repo → **Settings → Secrets and variables → Actions → New
-repository secret**. Add exactly these three (names must match):
+### Step 4 — Add the two secrets
+Go to **https://github.com/medfordadvancement/dc-autocomment/settings/secrets/actions**
+and add:
 
 | Secret name | Value |
 |---|---|
-| `OAUTH_CLIENT_ID` | Client ID from Step 1.4 |
-| `OAUTH_CLIENT_SECRET` | Client secret from Step 1.4 |
-| `OAUTH_REFRESH_TOKEN` | The refresh token from Step 2 |
+| `TELEGRAM_BOT_TOKEN` | the token from BotFather (Step 1) |
+| `TELEGRAM_CHAT_ID` | your Id from @userinfobot (Step 3) |
 
-(The channel id and comment text are not secret — they're in the workflow file.)
+(The old `OAUTH_*` secrets are no longer used — you can delete them.)
 
-## Step 5 — Turn it on
+### Step 5 — Test it
+Repo → **Actions** → **DC upload notifier** → **Run workflow** → tick the
+**test** box → **Run workflow**. You should get a "✅ Test alert" in Telegram
+within a few seconds.
 
-Repo → **Actions** tab → enable workflows if prompted. The job runs every
-~10 min on its own. To test immediately: Actions → **DC auto-comment** → **Run
-workflow**.
+Then run it once normally (without the test box) — the first normal run records
+your current uploads and sends nothing, so it won't blast you for existing
+videos. After that, every new upload triggers an alert.
 
 ---
 
-## First run behavior (important)
+## What each alert looks like
+```
+🆕 New Discover Crypto upload
 
-The **very first** run records your current recent uploads as "already handled"
-and posts **nothing** — so it won't spam videos that already exist. After that,
-only *new* uploads get a comment.
+<video title>
+https://youtu.be/<id>
 
-## How you know what to pin
+Comment to post + pin:
+Join our community - https://www.skool.com/discovercrypto/about - ...
 
-Each run logs the exact Studio links to pin. See them in: repo → **Actions** →
-click the latest run → **post** job → "Run poller" step. Any `COMMENTED — pin
-these now:` lines are your to-do. Open each → find your comment → ⋮ → **Pin**.
+Open comments to post & pin:
+https://studio.youtube.com/video/<id>/comments
+```
 
-(Want those pin links emailed/DM'd to you instead of checking the Actions log?
-Ask the assistant — easy to add.)
-
-## Changing the comment later
-
+## Changing the comment text
 Edit `COMMENT_TEXT` in `.github/workflows/autocomment.yml`, commit, push.
 
 ## Turning it off
-
-Repo → Actions → **DC auto-comment** → ••• → **Disable workflow**.
+Repo → Actions → **DC upload notifier** → ••• → **Disable workflow**.
