@@ -1,4 +1,4 @@
-# Discover Crypto — Auto-Comment on New Uploads
+# Discover Crypto — Auto-Comment on New Uploads (GitHub Actions)
 
 Automatically posts your community comment on every new video / short / live
 replay, within ~10 minutes of it going public. You still **pin** each one
@@ -7,162 +7,113 @@ manually (YouTube has no pin API — nothing can automate that step).
 - **Channel:** Discover Crypto (`UCjemQfjaXAzA-95RKoy9n_g`)
 - **Comment posted:**
   > Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system.
-- **Cost:** ~$0/month (inside Google Cloud free tiers)
-- **How it runs:** Cloud Scheduler → Cloud Function (Python) → YouTube Data API,
-  with a Cloud Storage file remembering which videos it already commented on.
+- **Cost:** free (GitHub Actions, no credit card)
+- **How it runs:** a GitHub Actions cron job (every ~10 min) runs `poller.py`,
+  which checks the channel feed and posts the comment on new public uploads.
+  `seen.json` (committed back after each run) remembers what's already done.
 
 ---
 
-## What YOU do vs. what's already built
+## Status so far
 
-Already written for you in this folder: `main.py`, `get_refresh_token.py`,
-`requirements.txt`. You don't edit code. You do the account/permission steps
-below (they need your sign-in) and run the deploy commands.
+- ✅ Google Cloud project `dc-autocomment` created
+- ✅ YouTube Data API enabled on it
+- ✅ Code written and committed locally in this folder
+- ⬜ **Steps below need you** (they require your Google + GitHub sign-in)
 
-Steps marked **[you — sign-in required]** are ones the assistant is not allowed
-to do for you (they involve signing in / granting access).
+Steps marked **[you]** need your sign-in/consent and can't be done for you.
 
 ---
 
-## Step 1 — Create a Google Cloud project  **[you — sign-in required]**
-
-1. Go to https://console.cloud.google.com/ and sign in with the Google account
-   that manages the Discover Crypto channel.
-2. Top bar → project dropdown → **New Project**. Name it e.g. `dc-autocomment`.
-3. Note the **Project ID** (looks like `dc-autocomment-472913`). You'll use it
-   below as `PROJECT_ID`.
-
-## Step 2 — Install the gcloud CLI (one time)
-
-Download: https://cloud.google.com/sdk/docs/install (Windows installer).
-Then in a terminal:
-
-```bash
-gcloud auth login
-gcloud config set project PROJECT_ID
-```
-
-## Step 3 — Enable the APIs
-
-```bash
-gcloud services enable \
-  youtube.googleapis.com \
-  cloudfunctions.googleapis.com \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  cloudscheduler.googleapis.com \
-  storage.googleapis.com
-```
-
-## Step 4 — Create the OAuth client  **[you — sign-in required]**
+## Step 1 — Create the OAuth client  **[you]**
 
 This is the identity that posts the comment.
 
-1. Console → **APIs & Services → OAuth consent screen**.
-   - User type: **External** → Create.
-   - Fill app name (e.g. "DC AutoComment"), your email. Save through the steps.
-   - On **Scopes**, add `https://www.googleapis.com/auth/youtube.force-ssl`.
-   - Add your Google account as a **Test user**.
-2. ⚠️ **CRITICAL — publish the app.** Back on the OAuth consent screen, set
-   **Publishing status → In production** (click "Publish app" / "Prepare for
-   verification" and confirm). If you leave it in *Testing*, your refresh token
-   **expires after 7 days** and the automation silently dies every week. In
-   production it does not expire. You'll see an "unverified app" warning during
-   Step 5 — that's fine, click through it (Advanced → Go to app).
-3. Console → **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
-   - Application type: **Desktop app**. Create.
-   - **Download JSON**, rename it to `client_secret.json`, and put it in this
-     folder (next to `get_refresh_token.py`).
-   - Also note its **Client ID** and **Client secret** — needed in Step 6.
+1. https://console.cloud.google.com/ → make sure the project is **dc-autocomment**.
+2. **APIs & Services → OAuth consent screen**
+   - User type: **External** → Create. Fill app name (e.g. "DC AutoComment")
+     and your email; save through the pages.
+   - Add scope `https://www.googleapis.com/auth/youtube.force-ssl`.
+   - Add your Google account under **Test users**.
+3. ⚠️ **CRITICAL — publish to production.** On the OAuth consent screen set
+   **Publishing status → In production** ("Publish app" → confirm). If you leave
+   it in *Testing*, your refresh token **expires after 7 days** and the whole
+   thing silently dies every week. In production it never expires. You'll see an
+   "unverified app" warning later — that's expected, click through it.
+4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+   - Application type: **Desktop app** → Create.
+   - **Download JSON**, rename to `client_secret.json`, put it in this folder.
+     (It's gitignored — it will not be uploaded to GitHub.)
 
-## Step 5 — Mint your refresh token  **[you — sign-in required]**
+## Step 2 — Mint your refresh token  **[you]**
 
-On your computer, in this folder:
+In this folder, on your computer:
 
 ```bash
-pip install google-auth-oauthlib google-auth
+pip install -r requirements.txt
 python get_refresh_token.py
 ```
 
-A browser opens. Sign in, pick the **Discover Crypto** channel if asked, click
-through the unverified-app warning, and approve. The script prints a
-**refresh token** — copy it for Step 6.
+A browser opens. Sign in, **pick the Discover Crypto channel if asked**, click
+through the unverified-app warning, approve. It prints a **refresh token** —
+keep it for Step 4. (This is the step that ties the automation to your channel.)
 
-## Step 6 — Create the state bucket and deploy the function
+## Step 3 — Put the code on GitHub  **[you sign-in, I can run the push]**
 
-Pick a globally-unique bucket name (e.g. `dc-autocomment-state-472913`).
+Create an **empty** repo (a **public** repo is recommended — it keeps Actions
+100% free with no minute limits, and contains no secrets; your tokens live in
+encrypted repo secrets, never in the code):
 
-```bash
-# state bucket (remembers which videos are already done)
-gcloud storage buckets create gs://YOUR_BUCKET_NAME --location=US
+- Easiest: install GitHub CLI (https://cli.github.com/), run `gh auth login`,
+  then tell the assistant — it will create the repo and push for you.
+- Or manually: create a new empty repo at https://github.com/new (no README),
+  then in this folder:
+  ```bash
+  git branch -M main
+  git remote add origin https://github.com/YOURNAME/dc-autocomment.git
+  git push -u origin main
+  ```
 
-# deploy the poller
-gcloud functions deploy dc-autocomment \
-  --gen2 --runtime=python312 --region=us-central1 \
-  --source=. --entry-point=run --trigger-http --no-allow-unauthenticated \
-  --set-env-vars=CHANNEL_ID=UCjemQfjaXAzA-95RKoy9n_g,STATE_BUCKET=YOUR_BUCKET_NAME,OAUTH_CLIENT_ID=YOUR_CLIENT_ID,OAUTH_CLIENT_SECRET=YOUR_CLIENT_SECRET,OAUTH_REFRESH_TOKEN=YOUR_REFRESH_TOKEN \
-  --set-env-vars=^~^COMMENT_TEXT=Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system.
-```
+## Step 4 — Add the three secrets  **[you]**
 
-> The `^~^` before `COMMENT_TEXT` changes the delimiter so the commas/URL in the
-> comment don't break the flag. Keep it exactly as shown.
+In the GitHub repo → **Settings → Secrets and variables → Actions → New
+repository secret**. Add exactly these three (names must match):
 
-## Step 7 — Schedule it every 10 minutes
+| Secret name | Value |
+|---|---|
+| `OAUTH_CLIENT_ID` | Client ID from Step 1.4 |
+| `OAUTH_CLIENT_SECRET` | Client secret from Step 1.4 |
+| `OAUTH_REFRESH_TOKEN` | The refresh token from Step 2 |
 
-```bash
-# service account for the scheduler to call the function
-gcloud iam service-accounts create dc-autocomment-invoker
+(The channel id and comment text are not secret — they're in the workflow file.)
 
-PROJECT_ID=$(gcloud config get-value project)
-FN_URL=$(gcloud functions describe dc-autocomment --gen2 --region=us-central1 --format='value(serviceConfig.uri)')
+## Step 5 — Turn it on
 
-# let that service account invoke the function
-gcloud run services add-iam-policy-binding dc-autocomment \
-  --region=us-central1 \
-  --member="serviceAccount:dc-autocomment-invoker@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --role=roles/run.invoker
-
-# every 10 minutes
-gcloud scheduler jobs create http dc-autocomment-job \
-  --location=us-central1 --schedule="*/10 * * * *" \
-  --uri="${FN_URL}" --http-method=GET \
-  --oidc-service-account-email="dc-autocomment-invoker@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --oidc-token-audience="${FN_URL}"
-```
+Repo → **Actions** tab → enable workflows if prompted. The job runs every
+~10 min on its own. To test immediately: Actions → **DC auto-comment** → **Run
+workflow**.
 
 ---
 
 ## First run behavior (important)
 
-The **very first** time it runs, it records your current recent uploads as
-"already handled" and posts **nothing** — so it won't spam videos that already
-exist (you've already done those manually). From then on, only *new* uploads
-get a comment. (Controlled by `SEED_ON_FIRST_RUN=true`, the default.)
+The **very first** run records your current recent uploads as "already handled"
+and posts **nothing** — so it won't spam videos that already exist. After that,
+only *new* uploads get a comment.
 
 ## How you know what to pin
 
-After each run, the function logs the video ids it commented on. See them at:
-Console → the function → **Logs**, or:
+Each run logs the exact Studio links to pin. See them in: repo → **Actions** →
+click the latest run → **post** job → "Run poller" step. Any `COMMENTED — pin
+these now:` lines are your to-do. Open each → find your comment → ⋮ → **Pin**.
 
-```bash
-gcloud functions logs read dc-autocomment --gen2 --region=us-central1 --limit=20
-```
+(Want those pin links emailed/DM'd to you instead of checking the Actions log?
+Ask the assistant — easy to add.)
 
-Each logged `posted` id → open `https://studio.youtube.com/video/THAT_ID/comments`,
-find your comment, click ⋮ → **Pin**. (Want pin reminders pushed to you instead?
-Tell the assistant — the function can be extended to email/DM you the list.)
+## Changing the comment later
 
-## Changing the comment text later
-
-Re-run just the env-var update:
-
-```bash
-gcloud functions deploy dc-autocomment --gen2 --region=us-central1 --source=. \
-  --set-env-vars=^~^COMMENT_TEXT=Your new comment here
-```
+Edit `COMMENT_TEXT` in `.github/workflows/autocomment.yml`, commit, push.
 
 ## Turning it off
 
-```bash
-gcloud scheduler jobs pause dc-autocomment-job --location=us-central1
-```
+Repo → Actions → **DC auto-comment** → ••• → **Disable workflow**.
