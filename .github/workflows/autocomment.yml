@@ -32,8 +32,8 @@ jobs:
       - name: Run notifier
         env:
           CHANNEL_ID: UCjemQfjaXAzA-95RKoy9n_g
-          COMMENT_TEXT: "Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system."
-          COMMENT_TEXT_SHORTS: "🚀 Want to stop guessing and start investing with a system? Tap our channel name and hit the top link to join our free community."
+          COMMENT_TEXT: "Tired of guessing and hoping every time you invest? Inside our community you'll get a real system — and a group that actually has your back. Come join us 👉 https://www.skool.com/discovercrypto/about"
+          COMMENT_TEXT_SHORTS: "Tired of guessing and hoping every time you invest? Tap our channel and hit the top link — get a real system and a community that has your back. 🙌"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_ALERT: ${{ inputs.test }}
