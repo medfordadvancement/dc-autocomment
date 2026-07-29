@@ -36,7 +36,7 @@ REFRESH_TOKEN = os.environ["OAUTH_REFRESH_TOKEN"]
 SEED_ON_FIRST_RUN = os.environ.get("SEED_ON_FIRST_RUN", "true").lower() == "true"
 STATE_FILE = os.environ.get("STATE_FILE", "seen.json")
 
-FEED_URL = f"https://www.youtube.com/xml/feeds/videos.xml?channel_id={CHANNEL_ID}"
+FEED_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 NS = {
     "atom": "http://www.w3.org/2005/Atom",
     "yt": "http://www.youtube.com/xml/schemas/2015",
@@ -105,9 +105,21 @@ def main():
     ids = recent_video_ids()
 
     # First-ever run: record existing uploads, comment on none of them.
+    # Also verify the OAuth token here (which channel it posts as) so the
+    # whole pipeline is proven without posting anything public.
     if not seen and SEED_ON_FIRST_RUN:
+        try:
+            items = (
+                youtube().channels().list(part="snippet", mine=True).execute()
+            ).get("items", [])
+            who = items[0]["snippet"]["title"] if items else "UNKNOWN (no channel)"
+        except Exception as e:  # noqa: BLE001
+            who = f"TOKEN ERROR: {e}"
+        with open("verify_result.txt", "w", encoding="utf-8") as f:
+            f.write(who)
         save_seen(set(ids))
         print(f"Seeded {len(ids)} existing uploads; posted nothing.")
+        print(f"Token posts AS channel: {who}")
         return
 
     yt = youtube()

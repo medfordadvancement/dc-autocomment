@@ -8,8 +8,8 @@ manually (YouTube has no pin API — nothing can automate that step).
 - **Comment posted:**
   > Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system.
 - **Cost:** free (GitHub Actions, no credit card)
-- **How it runs:** a GitHub Actions cron job (every ~10 min) runs `poller.py`,
-  which checks the channel feed and posts the comment on new public uploads.
+- **How it runs:** a GitHub Actions cron job (every ~10 min) runs `poller.py`, which checks the channel's `feeds/videos.xml` and posts the
+  comment on new public uploads.
   `seen.json` (committed back after each run) remembers what's already done.
 
 ---

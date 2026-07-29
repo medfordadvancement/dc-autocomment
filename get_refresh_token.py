@@ -24,6 +24,7 @@ that manages it). The refresh token is tied to whatever you pick here.
 """
 
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
 # Full manage scope is required to POST comments.
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -38,10 +39,24 @@ def main():
         access_type="offline",
         prompt="consent",
     )
+
+    # Confirm which YouTube channel this token will post as.
+    try:
+        yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
+        items = yt.channels().list(part="snippet", mine=True).execute().get("items", [])
+        if items:
+            print("\n>>> This token posts AS channel: " + items[0]["snippet"]["title"])
+            print(">>> It MUST say 'Discover Crypto'. If it doesn't, re-run and pick")
+            print(">>> the Discover Crypto channel on the consent screen.")
+        else:
+            print("\n>>> WARNING: no channel found for this login.")
+    except Exception as e:  # noqa: BLE001
+        print("\n(Could not verify channel: " + str(e) + ")")
+
     print("\n=================== COPY THIS REFRESH TOKEN ===================\n")
     print(creds.refresh_token)
     print("\n===============================================================")
-    print("Paste it as OAUTH_REFRESH_TOKEN when you deploy (README Step 6).")
+    print("Paste it as the OAUTH_REFRESH_TOKEN GitHub secret (README Step 4).")
 
 
 if __name__ == "__main__":
