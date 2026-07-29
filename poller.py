@@ -26,7 +26,8 @@ import xml.etree.ElementTree as ET
 import requests
 
 CHANNEL_ID = os.environ["CHANNEL_ID"]
-COMMENT_TEXT = os.environ["COMMENT_TEXT"]
+COMMENT_TEXT = os.environ["COMMENT_TEXT"]              # for long-form videos + lives
+COMMENT_TEXT_SHORTS = os.environ["COMMENT_TEXT_SHORTS"]  # for Shorts (links aren't clickable)
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
@@ -68,6 +69,21 @@ def recent_uploads():
     return out
 
 
+def is_short(vid):
+    # A Short stays on /shorts/<id> (HTTP 200); a normal video or live redirects
+    # (303) to /watch. Falls back to treating it as a normal video on any error.
+    try:
+        r = requests.head(
+            f"https://www.youtube.com/shorts/{vid}",
+            allow_redirects=False,
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def send_telegram(text):
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
@@ -78,12 +94,15 @@ def send_telegram(text):
 
 
 def alert(vid, title):
+    short = is_short(vid)
+    kind = "Short" if short else "video"
+    comment = COMMENT_TEXT_SHORTS if short else COMMENT_TEXT
     send_telegram(
-        "🆕 New Discover Crypto upload\n\n"
+        f"🆕 New Discover Crypto {kind}\n\n"
         f"{title}\n"
         f"https://youtu.be/{vid}\n\n"
         "Comment to post + pin:\n"
-        f"{COMMENT_TEXT}\n\n"
+        f"{comment}\n\n"
         "Open comments to post & pin:\n"
         f"https://studio.youtube.com/video/{vid}/comments"
     )

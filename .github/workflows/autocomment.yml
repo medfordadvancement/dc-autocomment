@@ -33,6 +33,7 @@ jobs:
         env:
           CHANNEL_ID: UCjemQfjaXAzA-95RKoy9n_g
           COMMENT_TEXT: "Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system."
+          COMMENT_TEXT_SHORTS: "🚀 Want to stop guessing and start investing with a system? Tap our channel name and hit the top link to join our free community."
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_ALERT: ${{ inputs.test }}

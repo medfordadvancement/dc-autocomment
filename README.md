@@ -70,8 +70,14 @@ Open comments to post & pin:
 https://studio.youtube.com/video/<id>/comments
 ```
 
-## Changing the comment text
-Edit `COMMENT_TEXT` in `.github/workflows/autocomment.yml`, commit, push.
+## Two comment styles (auto-picked)
+The notifier detects whether an upload is a **Short** or a **long-form video/live**
+and suggests the right comment:
+- **Long-form / live** → `COMMENT_TEXT` (includes the clickable Skool link)
+- **Shorts** → `COMMENT_TEXT_SHORTS` (drives viewers to tap the channel's top link,
+  since links inside Shorts don't work)
+
+Edit either one in `.github/workflows/autocomment.yml`, commit, push.
 
 ## Turning it off
 Repo → Actions → **DC upload notifier** → ••• → **Disable workflow**.
