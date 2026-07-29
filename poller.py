@@ -1,24 +1,30 @@
 """
-Discover Crypto — new-upload notifier (runs on GitHub Actions).
+Discover Crypto - new-upload notifier with A/B comment rotation (GitHub Actions).
 
 Every run (~10 min):
   1. Reads the channel's public upload feed (videos + shorts + live replays).
-     No login/OAuth needed — the feed is public.
-  2. For any upload it hasn't seen before, sends you a Telegram message with the
-     title, the ready-to-paste comment, and a direct link to its comments page.
+     No login/OAuth needed - the feed is public.
+  2. For any upload it hasn't seen before, it:
+       - detects whether it's a Short or a long-form video/live,
+       - picks the next A/B comment variant (alternates A, B, A, B, ...),
+       - sends you a Telegram message with the title, the variant, the comment
+         to paste, and a direct link to the comments page,
+       - logs the choice to ab_log.csv so you can compare which variant drives
+         more Skool signups.
   3. Records the video id in seen.json so it never alerts twice.
 
-You then paste the comment and pin it (~20 seconds). Posting/pinning stays
-manual because YouTube won't let a manager account do it via API.
-
 Config (env vars set by the workflow / GitHub secrets):
-  CHANNEL_ID, COMMENT_TEXT     (workflow file)
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID   (GitHub secrets)
+  CHANNEL_ID                                            (workflow file)
+  COMMENT_TEXT_A, COMMENT_TEXT_B                        (long-form / live)
+  COMMENT_TEXT_SHORTS_A, COMMENT_TEXT_SHORTS_B          (Shorts)
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID                  (GitHub secrets)
   SEED_ON_FIRST_RUN  (optional, default "true")
   STATE_FILE         (optional, default "seen.json")
   TEST_ALERT         (optional; "true" sends one test message and exits)
 """
 
+import csv
+import datetime
 import json
 import os
 import xml.etree.ElementTree as ET
@@ -26,14 +32,17 @@ import xml.etree.ElementTree as ET
 import requests
 
 CHANNEL_ID = os.environ["CHANNEL_ID"]
-COMMENT_TEXT = os.environ["COMMENT_TEXT"]              # for long-form videos + lives
-COMMENT_TEXT_SHORTS = os.environ["COMMENT_TEXT_SHORTS"]  # for Shorts (links aren't clickable)
+COMMENT_A = os.environ["COMMENT_TEXT_A"]
+COMMENT_B = os.environ["COMMENT_TEXT_B"]
+COMMENT_SHORTS_A = os.environ["COMMENT_TEXT_SHORTS_A"]
+COMMENT_SHORTS_B = os.environ["COMMENT_TEXT_SHORTS_B"]
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 SEED_ON_FIRST_RUN = os.environ.get("SEED_ON_FIRST_RUN", "true").lower() == "true"
 STATE_FILE = os.environ.get("STATE_FILE", "seen.json")
 TEST_ALERT = os.environ.get("TEST_ALERT", "").lower() == "true"
+AB_LOG = "ab_log.csv"
 
 FEED_URL = f"https://www.youtube.com/feeds/videos.xml?channel_id={CHANNEL_ID}"
 NS = {
@@ -84,6 +93,30 @@ def is_short(vid):
         return False
 
 
+def ab_count():
+    # Number of alerts already logged, used to alternate A / B.
+    if not os.path.exists(AB_LOG):
+        return 0
+    with open(AB_LOG, encoding="utf-8") as f:
+        return max(0, sum(1 for _ in f) - 1)  # minus the header row
+
+
+def log_ab(vid, kind, variant, title):
+    new_file = not os.path.exists(AB_LOG)
+    with open(AB_LOG, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(["timestamp_utc", "video_id", "kind", "variant", "title"])
+        stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        w.writerow([stamp, vid, kind, variant, title])
+
+
+def pick_comment(short, variant):
+    if short:
+        return COMMENT_SHORTS_A if variant == "A" else COMMENT_SHORTS_B
+    return COMMENT_A if variant == "A" else COMMENT_B
+
+
 def send_telegram(text):
     r = requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
@@ -93,12 +126,9 @@ def send_telegram(text):
     r.raise_for_status()
 
 
-def alert(vid, title):
-    short = is_short(vid)
-    kind = "Short" if short else "video"
-    comment = COMMENT_TEXT_SHORTS if short else COMMENT_TEXT
+def send_alert(vid, title, kind, variant, comment):
     send_telegram(
-        f"🆕 New Discover Crypto {kind}\n\n"
+        f"New Discover Crypto {kind}  (test variant {variant})\n\n"
         f"{title}\n"
         f"https://youtu.be/{vid}\n\n"
         "Comment to post + pin:\n"
@@ -111,7 +141,7 @@ def alert(vid, title):
 def main():
     if TEST_ALERT:
         send_telegram(
-            "✅ Test alert from your Discover Crypto upload notifier. "
+            "Test alert from your Discover Crypto upload notifier. "
             "If you can read this, notifications are working."
         )
         print("Sent test alert.")
@@ -127,20 +157,27 @@ def main():
         print(f"Seeded {len(ids)} existing uploads; no alerts sent.")
         return
 
+    count = ab_count()
     alerted = []
-    for vid, title in uploads:
+    # Oldest first so A/B alternation follows publish order.
+    for vid, title in reversed(uploads):
         if vid in seen:
             continue
         try:
-            alert(vid, title)
+            short = is_short(vid)
+            kind = "Short" if short else "video"
+            variant = "A" if count % 2 == 0 else "B"
+            comment = pick_comment(short, variant)
+            send_alert(vid, title, kind, variant, comment)
+            log_ab(vid, kind, variant, title)
+            count += 1
             seen.add(vid)
-            alerted.append(vid)
-        except Exception as e:  # noqa: BLE001 — log and keep going
+            alerted.append((vid, kind, variant))
+        except Exception as e:  # noqa: BLE001 - log and keep going
             print(f"Alert failed for {vid}: {e}")
 
     save_seen(seen)
-    print(f"Alerted on {len(alerted)} new upload(s): {alerted}" if alerted
-          else "No new uploads.")
+    print(f"Alerted on {len(alerted)}: {alerted}" if alerted else "No new uploads.")
 
 
 if __name__ == "__main__":

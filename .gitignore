@@ -1,4 +1,4 @@
-# NEVER commit these — they are credentials
+# NEVER commit these - they are credentials
 client_secret.json
 token.json
 *.pem

@@ -32,8 +32,12 @@ jobs:
       - name: Run notifier
         env:
           CHANNEL_ID: UCjemQfjaXAzA-95RKoy9n_g
-          COMMENT_TEXT: "Tired of guessing and hoping every time you invest? Inside our community you'll get a real system — and a group that actually has your back. Come join us 👉 https://www.skool.com/discovercrypto/about"
-          COMMENT_TEXT_SHORTS: "Tired of guessing and hoping every time you invest? Tap our channel and hit the top link — get a real system and a community that has your back. 🙌"
+          # Long-form / live comments (clickable link). A = warm, B = FOMO.
+          COMMENT_TEXT_A: "Tired of guessing and hoping every time you invest? Inside our community you'll get a real system and a group that actually has your back. Come join us 👉 https://www.skool.com/discovercrypto/about"
+          COMMENT_TEXT_B: "Stop watching everyone else win while you're stuck guessing. Get the system that takes the fear out of investing and join us inside 👉 https://www.skool.com/discovercrypto/about"
+          # Shorts comments (drive to the channel's top link). A = warm, B = FOMO.
+          COMMENT_TEXT_SHORTS_A: "Tired of guessing and hoping every time you invest? Tap our channel and hit the top link to get a real system and a community that has your back. 🙌"
+          COMMENT_TEXT_SHORTS_B: "Stop watching everyone else win while you're stuck guessing. Tap our channel and hit the top link to get the system that takes the fear out of investing. 🔥"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TEST_ALERT: ${{ inputs.test }}

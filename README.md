@@ -1,4 +1,4 @@
-# Discover Crypto — New-Upload Notifier (Telegram)
+# Discover Crypto - New-Upload Notifier (Telegram)
 
 Alerts you on Telegram the moment a new video / short / live publishes, with the
 comment text ready to paste and a direct link to that video's comments page. You
@@ -19,22 +19,22 @@ paste + pin (~20 seconds).
 
 ---
 
-## Setup — Telegram (the only thing left to do)
+## Setup - Telegram (the only thing left to do)
 
-### Step 1 — Create a bot
+### Step 1 - Create a bot
 1. In Telegram, open a chat with **@BotFather**
 2. Send `/newbot`, follow the prompts (give it any name + username)
 3. BotFather replies with a **bot token** (looks like `12345678:AAE...`). Keep it.
 
-### Step 2 — Start a chat with your new bot
+### Step 2 - Start a chat with your new bot
 Search your bot's username in Telegram, open it, and press **Start** (send
 `/start`). A bot can't message you until you've started it.
 
-### Step 3 — Get your chat ID
+### Step 3 - Get your chat ID
 Open a chat with **@userinfobot** and press Start. It replies with your numeric
-**Id** — that's your `TELEGRAM_CHAT_ID`.
+**Id** - that's your `TELEGRAM_CHAT_ID`.
 
-### Step 4 — Add the two secrets
+### Step 4 - Add the two secrets
 Go to **https://github.com/medfordadvancement/dc-autocomment/settings/secrets/actions**
 and add:
 
@@ -43,14 +43,14 @@ and add:
 | `TELEGRAM_BOT_TOKEN` | the token from BotFather (Step 1) |
 | `TELEGRAM_CHAT_ID` | your Id from @userinfobot (Step 3) |
 
-(The old `OAUTH_*` secrets are no longer used — you can delete them.)
+(The old `OAUTH_*` secrets are no longer used - you can delete them.)
 
-### Step 5 — Test it
+### Step 5 - Test it
 Repo → **Actions** → **DC upload notifier** → **Run workflow** → tick the
 **test** box → **Run workflow**. You should get a "✅ Test alert" in Telegram
 within a few seconds.
 
-Then run it once normally (without the test box) — the first normal run records
+Then run it once normally (without the test box) - the first normal run records
 your current uploads and sends nothing, so it won't blast you for existing
 videos. After that, every new upload triggers an alert.
 
@@ -58,26 +58,31 @@ videos. After that, every new upload triggers an alert.
 
 ## What each alert looks like
 ```
-🆕 New Discover Crypto upload
+New Discover Crypto Short  (test variant B)
 
 <video title>
 https://youtu.be/<id>
 
 Comment to post + pin:
-Join our community - https://www.skool.com/discovercrypto/about - ...
+Stop watching everyone else win while you're stuck guessing. Tap our channel ...
 
 Open comments to post & pin:
 https://studio.youtube.com/video/<id>/comments
 ```
+The alert names the type (Short or video) and which A/B variant to pin.
 
-## Two comment styles (auto-picked)
-The notifier detects whether an upload is a **Short** or a **long-form video/live**
-and suggests the right comment:
-- **Long-form / live** → `COMMENT_TEXT` (includes the clickable Skool link)
-- **Shorts** → `COMMENT_TEXT_SHORTS` (drives viewers to tap the channel's top link,
-  since links inside Shorts don't work)
+## Comment styles: Short vs long-form, and A/B rotation
+The notifier detects whether an upload is a **Short** or a **long-form video/live**,
+then alternates between two copy variants (A, B, A, B...) so you can A/B test which
+converts better:
+- **Long-form / live** uses `COMMENT_TEXT_A` / `COMMENT_TEXT_B` (clickable Skool link)
+- **Shorts** use `COMMENT_TEXT_SHORTS_A` / `COMMENT_TEXT_SHORTS_B` (drive to the
+  channel's top link)
 
-Edit either one in `.github/workflows/autocomment.yml`, commit, push.
+Each Telegram alert tells you which **variant** to pin, and every choice is logged to
+`ab_log.csv` in the repo (timestamp, video id, kind, variant, title). Compare that log
+against your Skool signups to see which style wins. Edit any of the four variants in
+`.github/workflows/autocomment.yml`, commit, push.
 
 ## Turning it off
 Repo → Actions → **DC upload notifier** → ••• → **Disable workflow**.
