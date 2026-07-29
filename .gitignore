@@ -1,0 +1,9 @@
+# NEVER commit these — they are credentials
+client_secret.json
+token.json
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,44 @@
+name: DC auto-comment
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every ~10 minutes (GitHub may delay under load)
+  workflow_dispatch: {}        # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write              # needed to commit seen.json back to the repo
+
+concurrency:
+  group: dc-auto-comment
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run poller
+        env:
+          CHANNEL_ID: UCjemQfjaXAzA-95RKoy9n_g
+          COMMENT_TEXT: "Join our community - https://www.skool.com/discovercrypto/about - to learn how to stop guessing and start investing with a system."
+          OAUTH_CLIENT_ID: ${{ secrets.OAUTH_CLIENT_ID }}
+          OAUTH_CLIENT_SECRET: ${{ secrets.OAUTH_CLIENT_SECRET }}
+          OAUTH_REFRESH_TOKEN: ${{ secrets.OAUTH_REFRESH_TOKEN }}
+        run: python poller.py
+
+      - name: Commit updated state
+        run: |
+          if ! git diff --quiet seen.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add seen.json
+            git commit -m "Update seen.json [skip ci]"
+            git push
+          fi
