@@ -127,15 +127,17 @@ def send_telegram(text):
 
 
 def send_alert(vid, title, kind, variant, comment):
+    # Message 1: what it is + the one-tap link straight to its comments page.
     send_telegram(
         f"New Discover Crypto {kind}  (test variant {variant})\n\n"
         f"{title}\n"
         f"https://youtu.be/{vid}\n\n"
-        "Comment to post + pin:\n"
-        f"{comment}\n\n"
-        "Open comments to post & pin:\n"
-        f"https://studio.youtube.com/video/{vid}/comments"
+        "Tap to open its comments page (post + pin here):\n"
+        f"https://studio.youtube.com/video/{vid}/comments\n\n"
+        "The exact comment to pin is in the next message - tap it to copy."
     )
+    # Message 2: the bare comment, so a single tap copies exactly it.
+    send_telegram(comment)
 
 
 def main():
