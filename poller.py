@@ -30,6 +30,7 @@ import csv
 import datetime
 import json
 import os
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -70,16 +71,24 @@ def save_seen(seen):
 
 
 def recent_uploads():
-    r = requests.get(FEED_URL, timeout=30)
-    r.raise_for_status()
-    root = ET.fromstring(r.text)
-    out = []
-    for e in root.findall("atom:entry", NS):
-        vid = e.find("yt:videoId", NS)
-        title = e.find("atom:title", NS)
-        if vid is not None and vid.text:
-            out.append((vid.text, title.text if title is not None else "(untitled)"))
-    return out
+    # Retry a few times so a transient YouTube hiccup doesn't kill the run.
+    last = None
+    for attempt in range(3):
+        try:
+            r = requests.get(FEED_URL, timeout=30)
+            r.raise_for_status()
+            root = ET.fromstring(r.text)
+            out = []
+            for e in root.findall("atom:entry", NS):
+                vid = e.find("yt:videoId", NS)
+                title = e.find("atom:title", NS)
+                if vid is not None and vid.text:
+                    out.append((vid.text, title.text if title is not None else "(untitled)"))
+            return out
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(3)
+    raise last
 
 
 def is_short(vid):
@@ -196,7 +205,11 @@ def main():
         return
 
     seen = load_seen()
-    uploads = recent_uploads()
+    try:
+        uploads = recent_uploads()
+    except Exception as e:  # noqa: BLE001 - transient feed error; try again next run
+        print(f"Feed fetch failed after retries: {e}")
+        return
     ids = [u[0] for u in uploads]
 
     # First-ever run: record existing uploads, alert on none of them.
